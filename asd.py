@@ -4,7 +4,8 @@ import datetime
 import tkinter as tk
 from tkinter import messagebox
 import winreg as reg
-
+# from pystray import Icon, MenuItem, Menu
+from PIL import Image, ImageDraw
 # 设定Windows自启动
 def add_to_startup():
     script_path = os.path.realpath(__file__)
