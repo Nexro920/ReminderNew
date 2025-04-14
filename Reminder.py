@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import messagebox
 import winreg as reg
 # from pystray import Icon, MenuItem, Menu
-from PIL import Image, ImageDraw
+#from PIL import Image, ImageDraw
 
 # 获取当前运行的脚本路径
 def get_exe_path():
