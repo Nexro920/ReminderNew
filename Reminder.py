@@ -3,204 +3,212 @@ import sys
 import time
 import datetime
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import winreg as reg
-# from pystray import Icon, MenuItem, Menu
 from PIL import Image, ImageDraw
 
-# 获取当前运行的脚本路径
-def get_exe_path():
-    if getattr(sys, 'frozen', False):  # 如果是打包后的exe文件
-        return sys.executable
-    else:  # 如果是通过python源代码运行
-        return os.path.realpath(__file__)
+class RegistryManager:
+    """Handle Windows registry operations for auto-start functionality"""
+    REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    APP_NAME = "ReminderApp"
 
-# 设定Windows自启动
-def set_auto_start(enabled):
-    script_path = get_exe_path()  # 获取当前的exe文件路径
-    reg_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-    try:
-        key = reg.OpenKey(reg.HKEY_CURRENT_USER, reg_path, 0, reg.KEY_SET_VALUE)
-        if enabled:
-            reg.SetValueEx(key, "ReminderApp", 0, reg.REG_SZ, script_path)
-        else:
-            reg.DeleteValue(key, "ReminderApp")
-        reg.CloseKey(key)
-        return True
-    except Exception as e:
-        print(f"Error setting startup: {e}")
-        return False
+    @staticmethod
+    def get_exe_path():
+        """Get the path of the executable or script"""
+        return sys.executable if getattr(sys, 'frozen', False) else os.path.realpath(__file__)
 
-
-# 检查是否已经设置为自启动
-def is_auto_start_enabled():
-    reg_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-
-    try:
-        key = reg.OpenKey(reg.HKEY_CURRENT_USER, reg_path, 0, reg.KEY_READ)
+    @classmethod
+    def set_auto_start(cls, enabled):
+        """Set or remove the application from Windows startup"""
         try:
-            reg.QueryValueEx(key, "ReminderApp")
+            key = reg.OpenKey(reg.HKEY_CURRENT_USER, cls.REG_PATH, 0, reg.KEY_SET_VALUE)
+            if enabled:
+                reg.SetValueEx(key, cls.APP_NAME, 0, reg.REG_SZ, cls.get_exe_path())
+            else:
+                reg.DeleteValue(key, cls.APP_NAME)
             reg.CloseKey(key)
             return True
-        except FileNotFoundError:
-            reg.CloseKey(key)
+        except WindowsError as e:
+            print(f"Error setting startup: {e}")
             return False
-    except Exception as e:
-        print(f"Error checking startup status: {e}")
-        return False
 
-# 提醒应用
+    @classmethod
+    def is_auto_start_enabled(cls):
+        """Check if the application is set to auto-start"""
+        try:
+            key = reg.OpenKey(reg.HKEY_CURRENT_USER, cls.REG_PATH, 0, reg.KEY_READ)
+            reg.QueryValueEx(key, cls.APP_NAME)
+            reg.CloseKey(key)
+            return True
+        except WindowsError:
+            return False
+
 class ReminderApp:
+    DEFAULT_INTERVAL = "10"
+    DEFAULT_START_TIME = "09:00"
+    DEFAULT_END_TIME = "17:30"
+
     def __init__(self):
         self.is_running = False
         self.remaining_time = 0
         self.root = tk.Tk()
-        self.create_interface()
-
-    # 创建界面
-    def create_interface(self):
-        self.root.title("提醒设置")
-
-        window_width = 400
-        window_height = 300
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
-
-        position_top = int(screen_height / 2 - window_height / 2)
-        position_left = int(screen_width / 2 - window_width / 2)
-
-        self.root.geometry(f"{window_width}x{window_height}+{position_left}+{position_top}")
-
-        # 提醒间隔（分钟）
-        interval_label = tk.Label(self.root, text="提醒间隔（分钟）:")
-        interval_label.pack()
-        self.interval_var = tk.StringVar(value="10")
-        self.interval_entry = tk.Entry(self.root, textvariable=self.interval_var)
-        self.interval_entry.pack()
-
-        # 起始时间
-        start_time_label = tk.Label(self.root, text="提醒起始时间（HH:MM）:")
-        start_time_label.pack()
-        self.start_time_var = tk.StringVar(value="09:00")
-        self.start_time_entry = tk.Entry(self.root, textvariable=self.start_time_var)
-        self.start_time_entry.pack()
-
-        # 结束时间
-        end_time_label = tk.Label(self.root, text="提醒结束时间（HH:MM）:")
-        end_time_label.pack()
-        self.end_time_var = tk.StringVar(value="17:30")
-        self.end_time_entry = tk.Entry(self.root, textvariable=self.end_time_var)
-        self.end_time_entry.pack()
-
-        # 倒计时标签
-        self.countdown_label = tk.Label(self.root, text="剩余时间: 00:00 分钟")
-        self.countdown_label.pack()
-
-        # 开始/停止按钮
-        self.start_button = tk.Button(self.root, text="开始提醒", command=self.toggle_reminder)
-        self.start_button.pack()
-
-        # 设置程序自启动
-        self.auto_start_label = tk.Label(self.root, text="")
-        self.auto_start_label.pack()
+        self.setup_window()
+        self.create_widgets()
         self.update_auto_start_button()
 
-    def update_auto_start_button(self):
-        def rmbtn():
-            if hasattr(self, 'auto_start_button'):
-                self.auto_start_button.pack_forget()  # 移除旧按钮
-        # 检查是否已设置为自启动
-        if is_auto_start_enabled():
-            self.auto_start_label.config(text="已设置为自启动，若要取消自启动，请点击取消按钮")
-            rmbtn()
-            self.auto_start_button = tk.Button(self.root, text="取消自启动", command=self.remove_auto_start)
-        else:
-            self.auto_start_label.config(text="尚未设置为自启动")
-            rmbtn()
-            self.auto_start_button = tk.Button(self.root, text="设置为自启动", command=self.add_auto_start)
+    def setup_window(self):
+        """Configure the main window properties"""
+        self.root.title("Drink Water Reminder")
+        self.root.resizable(False, False)
 
-        self.auto_start_button.pack()
+        # Center the window
+        window_width, window_height = 400, 350
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        position_x = (screen_width - window_width) // 2
+        position_y = (screen_height - window_height) // 2
+        self.root.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
 
-    # 开始/停止按钮功能
+    def create_widgets(self):
+        """Create and arrange all UI widgets"""
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Interval input
+        ttk.Label(main_frame, text="Reminder Interval (minutes):").pack(pady=5)
+        self.interval_var = tk.StringVar(value=self.DEFAULT_INTERVAL)
+        self.interval_entry = ttk.Entry(main_frame, textvariable=self.interval_var, width=10)
+        self.interval_entry.pack()
+
+        # Start time
+        ttk.Label(main_frame, text="Start Time (HH:MM):").pack(pady=5)
+        self.start_time_var = tk.StringVar(value=self.DEFAULT_START_TIME)
+        self.start_time_entry = ttk.Entry(main_frame, textvariable=self.start_time_var, width=10)
+        self.start_time_entry.pack()
+
+        # End time
+        ttk.Label(main_frame, text="End Time (HH:MM):").pack(pady=5)
+        self.end_time_var = tk.StringVar(value=self.DEFAULT_END_TIME)
+        self.end_time_entry = ttk.Entry(main_frame, textvariable=self.end_time_var, width=10)
+        self.end_time_entry.pack()
+
+        # Countdown display
+        self.countdown_label = ttk.Label(main_frame, text="Time Remaining: 00:00")
+        self.countdown_label.pack(pady=10)
+
+        # Control buttons
+        self.start_button = ttk.Button(main_frame, text="Start Reminder", command=self.toggle_reminder)
+        self.start_button.pack(pady=5)
+
+        # Auto-start status
+        self.auto_start_label = ttk.Label(main_frame, text="")
+        self.auto_start_label.pack(pady=5)
+        self.auto_start_button = ttk.Button(main_frame)
+        self.auto_start_button.pack(pady=5)
+
+    def validate_inputs(self):
+        """Validate all user inputs"""
+        try:
+            # Validate interval
+            interval = int(self.interval_var.get())
+            if interval <= 0:
+                raise ValueError("Interval must be positive")
+
+            # Validate time format
+            for time_var in (self.start_time_var, self.end_time_var):
+                time.strptime(time_var.get(), "%H:%M")
+
+            # Validate time range
+            start = datetime.datetime.strptime(self.start_time_var.get(), "%H:%M")
+            end = datetime.datetime.strptime(self.end_time_var.get(), "%H:%M")
+            if end <= start:
+                raise ValueError("End time must be after start time")
+
+            return True
+        except ValueError as e:
+            messagebox.showerror("Invalid Input", str(e))
+            return False
+
     def toggle_reminder(self):
+        """Toggle between starting and stopping the reminder"""
         if self.is_running:
             self.stop_reminder()
-        else:
+        elif self.validate_inputs():
             self.start_reminder()
 
     def start_reminder(self):
+        """Start the reminder system"""
         self.is_running = True
-        self.start_button.config(text="停止")
-        self.enable_input_fields(False)
+        self.start_button.config(text="Stop Reminder")
+        self.set_input_state("disabled")
         self.remaining_time = int(self.interval_var.get()) * 60
-        self.remind_user()
+        self.check_reminder()
 
     def stop_reminder(self):
+        """Stop the reminder system"""
         self.is_running = False
-        self.start_button.config(text="开始提醒")
-        self.enable_input_fields(True)
+        self.start_button.config(text="Start Reminder")
+        self.set_input_state("normal")
+        self.countdown_label.config(text="Time Remaining: 00:00")
 
-    # 启用或禁用输入框
-    def enable_input_fields(self, state):
-        if state:
-            self.interval_entry.config(state="normal")
-            self.start_time_entry.config(state="normal")
-            self.end_time_entry.config(state="normal")
-        else:
-            self.interval_entry.config(state="disabled")
-            self.start_time_entry.config(state="disabled")
-            self.end_time_entry.config(state="disabled")
+    def set_input_state(self, state):
+        """Enable or disable input fields"""
+        for entry in (self.interval_entry, self.start_time_entry, self.end_time_entry):
+            entry.config(state=state)
 
-    # 提醒函数
-    def remind_user(self):
-        now = datetime.datetime.now().replace(second=0, microsecond=0)
-        current_time = now.strftime("%H:%M")
+    def check_reminder(self):
+        """Check if it's time to show a reminder"""
+        if not self.is_running:
+            return
 
-        # 获取用户设置的起始时间和结束时间，并且去掉秒和微秒部分
-        start_time = datetime.datetime.strptime(self.start_time_var.get(), "%H:%M").replace(second=0, microsecond=0).strftime("%H:%M")
-        end_time = datetime.datetime.strptime(self.end_time_var.get(), "%H:%M").replace(second=0, microsecond=0).strftime("%H:%M")
+        now = datetime.datetime.now().strftime("%H:%M")
+        start_time = self.start_time_var.get()
+        end_time = self.end_time_var.get()
 
-        # 判断当前时间是否在起始和结束时间之间
-        if start_time <= current_time < end_time:
+        if start_time <= now < end_time:
             self.update_countdown()
-            if self.is_running:
-                self.root.after(int(self.interval_var.get()) * 60 * 1000, self.remind_user)
+            self.root.after(60000, self.check_reminder)  # Check every minute
         else:
-            messagebox.showinfo("提醒", "当前时间为非提醒时间范围！")
+            messagebox.showinfo("Reminder", "Outside reminder time range!")
             self.stop_reminder()
 
-    # 更新倒计时显
-
-    # 更新倒计时显示
     def update_countdown(self):
-        if self.is_running:
-            if self.remaining_time > 0:
-                self.remaining_time -= 1  # 每秒递减
-                minutes = self.remaining_time // 60
-                seconds = self.remaining_time % 60
-                self.countdown_label.config(text=f"剩余时间: {minutes:02}:{seconds:02} 分钟")
-                self.root.after(1000, self.update_countdown)
-            else:
-                self.is_running = False
-                messagebox.showinfo("提醒", "该喝水啦！")
-                self.reset_timer()
+        """Update the countdown display"""
+        if not self.is_running:
+            return
 
-    # 重置倒计时
-    def reset_timer(self):
-        self.remaining_time = int(self.interval_var.get()) * 60
-        self.is_running = True
-        self.update_countdown()
+        if self.remaining_time > 0:
+            self.remaining_time -= 1
+            minutes, seconds = divmod(self.remaining_time, 60)
+            self.countdown_label.config(text=f"Time Remaining: {minutes:02d}:{seconds:02d}")
+            self.root.after(1000, self.update_countdown)
+        else:
+            messagebox.showinfo("Reminder", "Time to drink water!")
+            self.remaining_time = int(self.interval_var.get()) * 60
+            self.update_countdown()
 
-    # 设置为自启动
+    def update_auto_start_button(self):
+        """Update the auto-start button and label based on current state"""
+        if RegistryManager.is_auto_start_enabled():
+            self.auto_start_label.config(text="Application set to auto-start")
+            self.auto_start_button.config(text="Remove Auto-start", command=self.remove_auto_start)
+        else:
+            self.auto_start_label.config(text="Application not set to auto-start")
+            self.auto_start_button.config(text="Set Auto-start", command=self.add_auto_start)
+
     def add_auto_start(self):
-        if set_auto_start(True):
+        """Add application to auto-start"""
+        if RegistryManager.set_auto_start(True):
             self.update_auto_start_button()
 
-    # 取消自启动
     def remove_auto_start(self):
-        if set_auto_start(False):
+        """Remove application from auto-start"""
+        if RegistryManager.set_auto_start(False):
             self.update_auto_start_button()
 
-if __name__ == "__main__":
+def main():
     app = ReminderApp()
     app.root.mainloop()
+
+if __name__ == "__main__":
+    main()
