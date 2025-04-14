@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import datetime
 import tkinter as tk
@@ -6,13 +7,47 @@ from tkinter import messagebox
 import winreg as reg
 # from pystray import Icon, MenuItem, Menu
 from PIL import Image, ImageDraw
+
+# 获取当前运行的脚本路径
+def get_exe_path():
+    if getattr(sys, 'frozen', False):  # 如果是打包后的exe文件
+        return sys.executable
+    else:  # 如果是通过python源代码运行
+        return os.path.realpath(__file__)
+
 # 设定Windows自启动
-def add_to_startup():
-    script_path = os.path.realpath(__file__)
+def set_auto_start(enabled):
+    script_path = get_exe_path()  # 获取当前的exe文件路径
     reg_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-    key = reg.OpenKey(reg.HKEY_CURRENT_USER, reg_path, 0, reg.KEY_SET_VALUE)
-    reg.SetValueEx(key, "ReminderApp", 0, reg.REG_SZ, script_path)
-    reg.CloseKey(key)
+    try:
+        key = reg.OpenKey(reg.HKEY_CURRENT_USER, reg_path, 0, reg.KEY_SET_VALUE)
+        if enabled:
+            reg.SetValueEx(key, "ReminderApp", 0, reg.REG_SZ, script_path)
+        else:
+            reg.DeleteValue(key, "ReminderApp")
+        reg.CloseKey(key)
+        return True
+    except Exception as e:
+        print(f"Error setting startup: {e}")
+        return False
+
+
+# 检查是否已经设置为自启动
+def is_auto_start_enabled():
+    reg_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+    try:
+        key = reg.OpenKey(reg.HKEY_CURRENT_USER, reg_path, 0, reg.KEY_READ)
+        try:
+            reg.QueryValueEx(key, "ReminderApp")
+            reg.CloseKey(key)
+            return True
+        except FileNotFoundError:
+            reg.CloseKey(key)
+            return False
+    except Exception as e:
+        print(f"Error checking startup status: {e}")
+        return False
 
 # 提醒应用
 class ReminderApp:
@@ -66,21 +101,44 @@ class ReminderApp:
         self.start_button.pack()
 
         # 设置程序自启动
-        auto_start_button = tk.Button(self.root, text="设置为自启动", command=add_to_startup)
-        auto_start_button.pack()
+        self.auto_start_label = tk.Label(self.root, text="")
+        self.auto_start_label.pack()
+        self.update_auto_start_button()
+
+    def update_auto_start_button(self):
+        def rmbtn():
+            if hasattr(self, 'auto_start_button'):
+                self.auto_start_button.pack_forget()  # 移除旧按钮
+        # 检查是否已设置为自启动
+        if is_auto_start_enabled():
+            self.auto_start_label.config(text="已设置为自启动，若要取消自启动，请点击取消按钮")
+            rmbtn()
+            self.auto_start_button = tk.Button(self.root, text="取消自启动", command=self.remove_auto_start)
+        else:
+            self.auto_start_label.config(text="尚未设置为自启动")
+            rmbtn()
+            self.auto_start_button = tk.Button(self.root, text="设置为自启动", command=self.add_auto_start)
+
+        self.auto_start_button.pack()
 
     # 开始/停止按钮功能
     def toggle_reminder(self):
         if self.is_running:
-            self.is_running = False
-            self.start_button.config(text="开始提醒")
-            self.enable_input_fields(True)
+            self.stop_reminder()
         else:
-            self.is_running = True
-            self.start_button.config(text="停止")
-            self.enable_input_fields(False)
-            self.remaining_time = int(self.interval_var.get()) * 60
-            self.remind_user()
+            self.start_reminder()
+
+    def start_reminder(self):
+        self.is_running = True
+        self.start_button.config(text="停止")
+        self.enable_input_fields(False)
+        self.remaining_time = int(self.interval_var.get()) * 60
+        self.remind_user()
+
+    def stop_reminder(self):
+        self.is_running = False
+        self.start_button.config(text="开始提醒")
+        self.enable_input_fields(True)
 
     # 启用或禁用输入框
     def enable_input_fields(self, state):
@@ -103,15 +161,15 @@ class ReminderApp:
         end_time = datetime.datetime.strptime(self.end_time_var.get(), "%H:%M").replace(second=0, microsecond=0).strftime("%H:%M")
 
         # 判断当前时间是否在起始和结束时间之间
-        if start_time <= current_time <= end_time:
+        if start_time <= current_time < end_time:
             self.update_countdown()
             if self.is_running:
                 self.root.after(int(self.interval_var.get()) * 60 * 1000, self.remind_user)
         else:
             messagebox.showinfo("提醒", "当前时间为非提醒时间范围！")
-            self.is_running = False
-            self.start_button.config(text="开始提醒")
-            self.enable_input_fields(True)
+            self.stop_reminder()
+
+    # 更新倒计时显
 
     # 更新倒计时显示
     def update_countdown(self):
@@ -132,6 +190,16 @@ class ReminderApp:
         self.remaining_time = int(self.interval_var.get()) * 60
         self.is_running = True
         self.update_countdown()
+
+    # 设置为自启动
+    def add_auto_start(self):
+        if set_auto_start(True):
+            self.update_auto_start_button()
+
+    # 取消自启动
+    def remove_auto_start(self):
+        if set_auto_start(False):
+            self.update_auto_start_button()
 
 if __name__ == "__main__":
     app = ReminderApp()
