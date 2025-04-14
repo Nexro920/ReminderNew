@@ -1,11 +1,9 @@
 import os
 import sys
-import time
 import datetime
 import tkinter as tk
 from tkinter import messagebox, ttk
 import winreg as reg
-from PIL import Image, ImageDraw
 
 class RegistryManager:
     """Handle Windows registry operations for auto-start functionality"""
@@ -52,6 +50,7 @@ class ReminderApp:
         self.is_running = False
         self.remaining_time = 0
         self.root = tk.Tk()
+        self.after_id = None  # Store after ID for cancellation
         self.setup_window()
         self.create_widgets()
         self.update_auto_start_button()
@@ -61,7 +60,6 @@ class ReminderApp:
         self.root.title("Drink Water Reminder")
         self.root.resizable(False, False)
 
-        # Center the window
         window_width, window_height = 400, 350
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
@@ -74,49 +72,54 @@ class ReminderApp:
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Interval input
         ttk.Label(main_frame, text="Reminder Interval (minutes):").pack(pady=5)
         self.interval_var = tk.StringVar(value=self.DEFAULT_INTERVAL)
         self.interval_entry = ttk.Entry(main_frame, textvariable=self.interval_var, width=10)
         self.interval_entry.pack()
 
-        # Start time
         ttk.Label(main_frame, text="Start Time (HH:MM):").pack(pady=5)
         self.start_time_var = tk.StringVar(value=self.DEFAULT_START_TIME)
         self.start_time_entry = ttk.Entry(main_frame, textvariable=self.start_time_var, width=10)
         self.start_time_entry.pack()
 
-        # End time
         ttk.Label(main_frame, text="End Time (HH:MM):").pack(pady=5)
         self.end_time_var = tk.StringVar(value=self.DEFAULT_END_TIME)
         self.end_time_entry = ttk.Entry(main_frame, textvariable=self.end_time_var, width=10)
         self.end_time_entry.pack()
 
-        # Countdown display
         self.countdown_label = ttk.Label(main_frame, text="Time Remaining: 00:00")
         self.countdown_label.pack(pady=10)
 
-        # Control buttons
         self.start_button = ttk.Button(main_frame, text="Start Reminder", command=self.toggle_reminder)
         self.start_button.pack(pady=5)
 
-        # Auto-start status
         self.auto_start_label = ttk.Label(main_frame, text="")
         self.auto_start_label.pack(pady=5)
-        self.auto_start_button = ttk.Button(main_frame)
+        # Create auto-start button once during initialization
+        self.auto_start_button = ttk.Button(main_frame, text="Set Auto-start", command=self.add_auto_start)
         self.auto_start_button.pack(pady=5)
 
     def validate_inputs(self):
-        """Validate all user inputs"""
+        """Validate all user inputs with specific error messages"""
         try:
             # Validate interval
-            interval = int(self.interval_var.get())
-            if interval <= 0:
-                raise ValueError("Interval must be positive")
+            try:
+                interval = int(self.interval_var.get())
+                if interval <= 0:
+                    raise ValueError("Interval must be a positive number")
+            except ValueError:
+                raise ValueError("Please enter a valid number for the interval")
 
             # Validate time format
-            for time_var in (self.start_time_var, self.end_time_var):
-                time.strptime(time_var.get(), "%H:%M")
+            for time_var, field_name in [
+                (self.start_time_var, "Start time"),
+                (self.end_time_var, "End time")
+            ]:
+                time_str = time_var.get()
+                try:
+                    datetime.datetime.strptime(time_str, "%H:%M")
+                except ValueError:
+                    raise ValueError(f"{field_name} must be in HH:MM format (e.g., 09:00)")
 
             # Validate time range
             start = datetime.datetime.strptime(self.start_time_var.get(), "%H:%M")
@@ -142,7 +145,7 @@ class ReminderApp:
         self.start_button.config(text="Stop Reminder")
         self.set_input_state("disabled")
         self.remaining_time = int(self.interval_var.get()) * 60
-        self.check_reminder()
+        self.schedule_update()
 
     def stop_reminder(self):
         """Stop the reminder system"""
@@ -150,14 +153,17 @@ class ReminderApp:
         self.start_button.config(text="Start Reminder")
         self.set_input_state("normal")
         self.countdown_label.config(text="Time Remaining: 00:00")
+        if self.after_id:
+            self.root.after_cancel(self.after_id)
+            self.after_id = None
 
     def set_input_state(self, state):
         """Enable or disable input fields"""
         for entry in (self.interval_entry, self.start_time_entry, self.end_time_entry):
             entry.config(state=state)
 
-    def check_reminder(self):
-        """Check if it's time to show a reminder"""
+    def schedule_update(self):
+        """Schedule the next update for countdown and reminder check"""
         if not self.is_running:
             return
 
@@ -167,10 +173,13 @@ class ReminderApp:
 
         if start_time <= now < end_time:
             self.update_countdown()
-            self.root.after(60000, self.check_reminder)  # Check every minute
         else:
             messagebox.showinfo("Reminder", "Outside reminder time range!")
             self.stop_reminder()
+            return
+
+        # Schedule next update in 1 second
+        self.after_id = self.root.after(1000, self.schedule_update)
 
     def update_countdown(self):
         """Update the countdown display"""
@@ -181,11 +190,9 @@ class ReminderApp:
             self.remaining_time -= 1
             minutes, seconds = divmod(self.remaining_time, 60)
             self.countdown_label.config(text=f"Time Remaining: {minutes:02d}:{seconds:02d}")
-            self.root.after(1000, self.update_countdown)
         else:
             messagebox.showinfo("Reminder", "Time to drink water!")
             self.remaining_time = int(self.interval_var.get()) * 60
-            self.update_countdown()
 
     def update_auto_start_button(self):
         """Update the auto-start button and label based on current state"""
