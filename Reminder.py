@@ -7,6 +7,7 @@ import winreg as reg
 from PIL import Image, ImageDraw
 import pystray
 import threading
+import json
 
 class RegistryManager:
     """Handle Windows registry operations for auto-start functionality."""
@@ -100,7 +101,71 @@ class ReminderApp:
         "icon_ellipse_color": (255, 255, 255),
         "entry_width": 10,
         "padding": 10,
-        "spacing": 5
+        "spacing": 5,
+        "config_file": "settings.json",
+        "default_language": "English"
+    }
+
+    # Translation dictionaries
+    TRANSLATIONS = {
+        "English": {
+            "app_name": "Drink Water Reminder",
+            "interval_label": "Reminder Interval (minutes):",
+            "start_time_label": "Start Time (HH:MM):",
+            "end_time_label": "End Time (HH:MM):",
+            "countdown_label": "Time Remaining: 00:00",
+            "countdown_label_prefix": "Time Remaining",
+            "start_button": "Start Reminder",
+            "stop_button": "Stop Reminder",
+            "auto_start_label_on": "Application set to auto-start",
+            "auto_start_label_off": "Application not set to auto-start",
+            "set_auto_start": "Set Auto-start",
+            "remove_auto_start": "Remove Auto-start",
+            "settings_button": "Settings",
+            "settings_title": "Settings",
+            "language_label": "Language:",
+            "save_button": "Save",
+            "invalid_input": "Invalid Input",
+            "interval_error": "Interval must be positive",
+            "interval_invalid": "Interval must be a number",
+            "interval_empty": "Interval cannot be empty",
+            "time_error": "End time must be after start time",
+            "time_invalid": "Time must be in HH:MM format",
+            "outside_range": "Outside reminder time range!",
+            "drink_water": "Time to drink water!",
+            "restore_window": "Restore",
+            "hide_window": "Hide",
+            "exit_button": "Exit"
+        },
+        "中文": {
+            "app_name": "喝水提醒",
+            "interval_label": "提醒间隔（分钟）：",
+            "start_time_label": "开始时间（HH:MM）：",
+            "end_time_label": "结束时间（HH:MM）：",
+            "countdown_label": "剩余时间：00:00",
+            "countdown_label_prefix": "剩余时间",
+            "start_button": "开始提醒",
+            "stop_button": "停止提醒",
+            "auto_start_label_on": "应用已设为开机启动",
+            "auto_start_label_off": "应用未设为开机启动",
+            "set_auto_start": "设置开机启动",
+            "remove_auto_start": "移除开机启动",
+            "settings_button": "设置",
+            "settings_title": "设置",
+            "language_label": "语言：",
+            "save_button": "保存",
+            "invalid_input": "输入无效",
+            "interval_error": "间隔时间必须为正数",
+            "interval_invalid": "间隔时间必须为数字",
+            "interval_empty": "间隔时间不能为空",
+            "time_error": "结束时间必须晚于开始时间",
+            "time_invalid": "时间必须为HH:MM格式",
+            "outside_range": "不在提醒时间范围内！",
+            "drink_water": "该喝水了！",
+            "restore_window": "恢复",
+            "hide_window": "隐藏",
+            "exit_button": "退出"
+        }
     }
 
     def __init__(self):
@@ -109,13 +174,40 @@ class ReminderApp:
         self.window_hidden = False
         self.after_id = None
         self.tray_icon = None
+        self.language = self.load_language()
         self.root = tk.Tk()
         self._initialize_ui()
         self.update_auto_start_button()
 
+    def load_language(self) -> str:
+        """Load language from config file or return default."""
+        try:
+            with open(self.CONFIG["config_file"], "r") as f:
+                settings = json.load(f)
+            language = settings.get("language", self.CONFIG["default_language"])
+            if language not in self.TRANSLATIONS:
+                print(f"Invalid language {language}, resetting to default")
+                language = self.CONFIG["default_language"]
+                self.save_language(language)
+            return language
+        except (FileNotFoundError, json.JSONDecodeError):
+            return self.CONFIG["default_language"]
+
+    def save_language(self, language: str):
+        """Save language to config file."""
+        try:
+            with open(self.CONFIG["config_file"], "w") as f:
+                json.dump({"language": language}, f)
+        except Exception as e:
+            print(f"Error saving language: {e}")
+
+    def get_text(self, key: str) -> str:
+        """Get translated text for the current language."""
+        return self.TRANSLATIONS[self.language].get(key, self.TRANSLATIONS["English"][key])
+
     def _initialize_ui(self):
         """Set up the main window and widgets."""
-        self.root.title(self.CONFIG["app_name"])
+        self.root.title(self.get_text("app_name"))
         self.root.resizable(False, False)
 
         # Center window
@@ -126,10 +218,12 @@ class ReminderApp:
         self.root.geometry(f"{self.CONFIG['window_width']}x{self.CONFIG['window_height']}+{x}+{y}")
 
         # Bind events
-        # self.root.bind("<Unmap>", lambda event: self.minimize_to_tray() if self.root.state() == "iconic" else None)
         self.root.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
 
         self.create_widgets()
+        self.create_tray_icon()
+        if self.tray_icon:
+            threading.Thread(target=self.tray_icon.run, daemon=True, name="TrayIconThread").start()
 
     def create_widgets(self):
         """Create and arrange UI widgets."""
@@ -137,36 +231,114 @@ class ReminderApp:
         frame.pack(fill=tk.BOTH, expand=True)
 
         # Interval input
-        ttk.Label(frame, text="Reminder Interval (minutes):").pack(pady=self.CONFIG["spacing"])
+        self.interval_label = ttk.Label(frame, text=self.get_text("interval_label"))
+        self.interval_label.pack(pady=self.CONFIG["spacing"])
         self.interval_var = tk.StringVar(value=self.CONFIG["interval"])
         self.interval_entry = ttk.Entry(frame, textvariable=self.interval_var, width=self.CONFIG["entry_width"])
         self.interval_entry.pack()
 
         # Start time input
-        ttk.Label(frame, text="Start Time (HH:MM):").pack(pady=self.CONFIG["spacing"])
+        self.start_time_label = ttk.Label(frame, text=self.get_text("start_time_label"))
+        self.start_time_label.pack(pady=self.CONFIG["spacing"])
         self.start_time_var = tk.StringVar(value=self.CONFIG["start_time"])
         self.start_time_entry = ttk.Entry(frame, textvariable=self.start_time_var, width=self.CONFIG["entry_width"])
         self.start_time_entry.pack()
 
         # End time input
-        ttk.Label(frame, text="End Time (HH:MM):").pack(pady=self.CONFIG["spacing"])
+        self.end_time_label = ttk.Label(frame, text=self.get_text("end_time_label"))
+        self.end_time_label.pack(pady=self.CONFIG["spacing"])
         self.end_time_var = tk.StringVar(value=self.CONFIG["end_time"])
         self.end_time_entry = ttk.Entry(frame, textvariable=self.end_time_var, width=self.CONFIG["entry_width"])
         self.end_time_entry.pack()
 
         # Countdown display
-        self.countdown_label = ttk.Label(frame, text="Time Remaining: 00:00")
+        self.countdown_label = ttk.Label(frame, text=self.get_text("countdown_label"))
         self.countdown_label.pack(pady=self.CONFIG["spacing"] * 2)
 
         # Start/Stop button
-        self.start_button = ttk.Button(frame, text="Start Reminder", command=self.toggle_reminder)
+        self.start_button = ttk.Button(frame, text=self.get_text("start_button"), command=self.toggle_reminder)
         self.start_button.pack(pady=self.CONFIG["spacing"])
 
         # Auto-start status
         self.auto_start_label = ttk.Label(frame, text="")
         self.auto_start_label.pack(pady=self.CONFIG["spacing"])
-        self.auto_start_button = ttk.Button(frame, text="Set Auto-start", command=self.add_auto_start)
+        self.auto_start_button = ttk.Button(frame, text=self.get_text("set_auto_start"), command=self.add_auto_start)
         self.auto_start_button.pack()
+
+    def open_settings(self):
+        """Open the settings window for language selection."""
+        self.restore_window()
+
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title(self.get_text("settings_title"))
+        settings_window.resizable(False, False)
+        settings_window.transient(self.root)
+
+        frame = ttk.Frame(settings_window, padding=self.CONFIG["padding"])
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(frame, text=self.get_text("language_label")).pack(pady=self.CONFIG["spacing"])
+        language_var = tk.StringVar(value=self.language)
+        language_menu = ttk.OptionMenu(frame, language_var, self.language, *self.TRANSLATIONS.keys())
+        language_menu.pack(pady=self.CONFIG["spacing"])
+
+        def save_and_close():
+            new_language = language_var.get()
+            if new_language != self.language:
+                self.language = new_language
+                self.save_language(new_language)
+                self.update_ui_text()
+            settings_window.destroy()
+
+        ttk.Button(frame, text=self.get_text("save_button"), command=save_and_close).pack(pady=self.CONFIG["spacing"])
+
+        # Center window
+        settings_window.update_idletasks()
+        width = max(200, settings_window.winfo_reqwidth())
+        height = settings_window.winfo_reqheight()
+        x = (settings_window.winfo_screenwidth() - width) // 2
+        y = (settings_window.winfo_screenheight() - height) // 2
+        settings_window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def update_ui_text(self):
+        """Update all UI text based on current language."""
+        self.root.title(self.get_text("app_name"))
+        for widget, key in [
+            (self.interval_label, "interval_label"),
+            (self.start_time_label, "start_time_label"),
+            (self.end_time_label, "end_time_label"),
+            (self.countdown_label, "countdown_label"),
+            (self.start_button, "start_button" if not self.is_running else "stop_button"),
+            (self.auto_start_button, "set_auto_start" if not RegistryManager.is_auto_start_enabled() else "remove_auto_start"),
+            (self.auto_start_label, "auto_start_label_on" if RegistryManager.is_auto_start_enabled() else "auto_start_label_off")
+        ]:
+            widget.config(text=self.get_text(key))
+        # Refresh tray icon if it exists
+        if self.tray_icon:
+            try:
+                self.tray_icon.title = self.get_text("app_name")
+                self.tray_icon.menu = self.is_show_window()
+            except Exception as e:
+                print(f"Failed to update tray icon: {e}")
+                self.tray_icon.stop()
+                self.tray_icon = None
+                self.create_tray_icon()
+                threading.Thread(target=self.tray_icon.run, daemon=True, name="TrayIconThread").start()
+
+    def is_show_window(self):
+        """Return menu with window_hidden ."""
+        if self.window_hidden:
+            return pystray.Menu(
+                pystray.MenuItem(self.get_text("settings_button"), self.open_settings),
+                pystray.MenuItem(self.get_text("restore_window"), self.toggle_window, default=True),
+                pystray.MenuItem(self.get_text("exit_button"), self.exit_application)
+            )
+        else:
+            return pystray.Menu(
+                pystray.MenuItem(self.get_text("settings_button"), self.open_settings),
+                pystray.MenuItem(self.get_text("hide_window"), self.toggle_window, default=True),
+                pystray.MenuItem(self.get_text("exit_button"), self.exit_application)
+            )
 
     def create_tray_icon(self):
         """Create system tray icon with menu."""
@@ -175,73 +347,52 @@ class ReminderApp:
             draw = ImageDraw.Draw(image)
             draw.ellipse((16, 16, 48, 48), fill=self.CONFIG["icon_ellipse_color"])
 
-            menu = pystray.Menu(
-                pystray.MenuItem("Restore", self.restore_window, default=True),
-                pystray.MenuItem("Exit", self.exit_application)
-            )
-
+            menu = self.is_show_window()
             self.tray_icon = pystray.Icon(
                 name=self.CONFIG["app_name"],
                 icon=image,
-                title=self.CONFIG["app_name"],
+                title=self.get_text("app_name"),
                 menu=menu
             )
         except Exception as e:
             print(f"Failed to create tray icon: {e}")
-            self.restore_window()
+            self.window_hidden = False
+            self.root.deiconify()
 
     def show_notification(self, title: str, message: str, callback: callable = None):
         """Show a notification window without affecting main window visibility."""
         def _show():
-            self.is_running = False
-            if self.after_id:
-                self.root.after_cancel(self.after_id)
-                self.after_id = None
-
-            NotificationWindow(self.root, title, message, lambda: self.on_notification_closed(callback))
+            NotificationWindow(self.root, self.get_text(title), self.get_text(message), callback)
 
         self.root.after(0, _show)
 
-    def on_notification_closed(self, callback: callable = None):
-        """Handle notification window closure."""
+    def on_notification_closed(self):
+        """Handle notification window closure and restart countdown."""
         self.is_running = True
-        if callback:
-            callback()
         self.remaining_time = int(self.interval_var.get()) * 60
         self.schedule_update()
 
     def minimize_to_tray(self):
         """Minimize the window to the system tray."""
-        if self.window_hidden:
-            return
-
-        try:
+        if not self.window_hidden:
             self.root.withdraw()
             self.window_hidden = True
-            if not self.tray_icon:
-                self.create_tray_icon()
-            threading.Thread(target=self.tray_icon.run, daemon=True, name="TrayIconThread").start()
-        except Exception as e:
-            print(f"Failed to minimize to tray: {e}")
+            self.tray_icon.menu = self.is_show_window()
+
+    def toggle_window(self):
+        """Toggle the window show or hide."""
+        print(self.window_hidden)
+        if self.window_hidden:
             self.restore_window()
+        else:
+            self.minimize_to_tray()
 
     def restore_window(self, icon=None, item=None):
-        """Restore the main window from the system tray."""
-        if not self.window_hidden:
-            return
-
-        def _restore():
+        """Restore the main window."""
+        if self.window_hidden:
             self.root.deiconify()
             self.window_hidden = False
-            if self.tray_icon:
-                try:
-                    self.tray_icon.stop()
-                except Exception as e:
-                    print(f"Error stopping tray icon: {e}")
-                finally:
-                    self.tray_icon = None
-
-        self.root.after(0, _restore)
+            self.tray_icon.menu = self.is_show_window()
 
     def exit_application(self, icon=None, item=None):
         """Clean up resources and exit the application."""
@@ -267,31 +418,51 @@ class ReminderApp:
     def validate_inputs(self) -> bool:
         """Validate user inputs for interval and time range."""
         try:
-            interval = int(self.interval_var.get())
+            # Validate interval
+            interval_str = self.interval_var.get()
+            if not interval_str.strip():
+                raise ValueError("interval_empty")
+            try:
+                interval = int(interval_str)
+            except ValueError:
+                raise ValueError("interval_invalid")
             if interval <= 0:
-                raise ValueError("Interval must be positive")
+                raise ValueError("interval_error")
 
-            start = datetime.datetime.strptime(self.start_time_var.get(), "%H:%M")
-            end = datetime.datetime.strptime(self.end_time_var.get(), "%H:%M")
+            # Validate time format and range
+            start_str = self.start_time_var.get()
+            end_str = self.end_time_var.get()
+            try:
+                start = datetime.datetime.strptime(start_str, "%H:%M")
+                end = datetime.datetime.strptime(end_str, "%H:%M")
+            except ValueError:
+                raise ValueError("time_invalid")
             if end <= start:
-                raise ValueError("End time must be after start time")
+                raise ValueError("time_error")
+
+            # Check if current time is within range
+            now = datetime.datetime.now().strftime("%H:%M")
+            if not (start_str <= now < end_str):
+                raise ValueError("outside_range")
 
             return True
         except ValueError as e:
-            self.show_notification("Invalid Input", str(e))
+            self.show_notification("invalid_input", str(e))
             return False
 
     def toggle_reminder(self):
         """Toggle the reminder on or off."""
         if self.is_running:
             self.stop_reminder()
-        elif self.validate_inputs():
+        else:
             self.start_reminder()
 
     def start_reminder(self):
         """Start the reminder system."""
+        if not self.validate_inputs():
+            return
         self.is_running = True
-        self.start_button.config(text="Stop Reminder")
+        self.start_button.config(text=self.get_text("stop_button"))
         self.set_input_state("disabled")
         self.remaining_time = int(self.interval_var.get()) * 60
         self.schedule_update()
@@ -299,9 +470,9 @@ class ReminderApp:
     def stop_reminder(self):
         """Stop the reminder system."""
         self.is_running = False
-        self.start_button.config(text="Start Reminder")
+        self.start_button.config(text=self.get_text("start_button"))
         self.set_input_state("normal")
-        self.countdown_label.config(text="Time Remaining: 00:00")
+        self.countdown_label.config(text=self.get_text("countdown_label"))
         if self.after_id:
             self.root.after_cancel(self.after_id)
             self.after_id = None
@@ -316,12 +487,8 @@ class ReminderApp:
         if not self.is_running:
             return
 
-        now = datetime.datetime.now().strftime("%H:%M")
-        if self.start_time_var.get() <= now < self.end_time_var.get():
-            self.update_countdown()
-            self.after_id = self.root.after(1000, self.schedule_update)
-        else:
-            self.show_notification(self.CONFIG["app_name"], "Outside reminder time range!", self.stop_reminder)
+        self.update_countdown()
+        self.after_id = self.root.after(1000, self.schedule_update)
 
     def update_countdown(self):
         """Update the countdown display."""
@@ -331,18 +498,19 @@ class ReminderApp:
         if self.remaining_time > 0:
             self.remaining_time -= 1
             minutes, seconds = divmod(self.remaining_time, 60)
-            self.countdown_label.config(text=f"Time Remaining: {minutes:02d}:{seconds:02d}")
+            self.countdown_label.config(text=f"{self.get_text('countdown_label_prefix')}: {minutes:02d}:{seconds:02d}")
         else:
-            self.show_notification(self.CONFIG["app_name"], "Time to drink water!")
+            self.is_running = False
+            self.show_notification("app_name", "drink_water", self.on_notification_closed)
 
     def update_auto_start_button(self):
         """Update the auto-start button and label."""
         is_enabled = RegistryManager.is_auto_start_enabled()
         self.auto_start_label.config(
-            text="Application set to auto-start" if is_enabled else "Application not set to auto-start"
+            text=self.get_text("auto_start_label_on") if is_enabled else self.get_text("auto_start_label_off")
         )
         self.auto_start_button.config(
-            text="Remove Auto-start" if is_enabled else "Set Auto-start",
+            text=self.get_text("remove_auto_start") if is_enabled else self.get_text("set_auto_start"),
             command=self.remove_auto_start if is_enabled else self.add_auto_start
         )
 
