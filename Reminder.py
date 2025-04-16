@@ -73,7 +73,7 @@ class NotificationWindow:
         self.center_window()
         self.top.protocol("WM_DELETE_WINDOW", self.close)
         self.top.focus_force()
-        self.top.after(100, lambda: self.top.attributes('-topmost', False))
+        self.top.after(1, lambda: self.top.attributes('-topmost', False))
 
     def center_window(self):
         """Center the window on the screen."""
