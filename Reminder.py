@@ -57,6 +57,7 @@ class NotificationWindow:
         self.top = tk.Toplevel(parent)
         self.top.title(title)
         self.top.resizable(False, False)
+        self.top.attributes('-topmost', True)
 
         # Main frame
         frame = ttk.Frame(self.top, padding=self.PADDING)
@@ -71,6 +72,8 @@ class NotificationWindow:
         # Center and bind events
         self.center_window()
         self.top.protocol("WM_DELETE_WINDOW", self.close)
+        self.top.focus_force()
+        self.top.after(100, lambda: self.top.attributes('-topmost', False))
 
     def center_window(self):
         """Center the window on the screen."""
@@ -381,7 +384,6 @@ class ReminderApp:
 
     def toggle_window(self):
         """Toggle the window show or hide."""
-        print(self.window_hidden)
         if self.window_hidden:
             self.restore_window()
         else:
