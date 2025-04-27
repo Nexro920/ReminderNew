@@ -1,4 +1,5 @@
 该程序用于周期性提醒用户，当前为“喝水”。
+
 ![image](https://github.com/user-attachments/assets/f666f2ab-7c13-4607-8c28-a0589ac58a17)
 
 提醒间隔可自行设置，默认为10分钟。
