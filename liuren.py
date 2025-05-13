@@ -75,7 +75,7 @@ def get_elements(n1, n2, n3):
         "天德（乾）（金）：吉祥如意，贵人相助"
     ]
 
-    # 从"大安"开始，获取对应的元素
+    # 从"大安"开始，获取对应的元素d
     first_index = (n1 - 1) % len(elements)
     second_index = (n1 + n2 - 2) % len(elements)
     third_index = (n1 + n2 + n3 - 3) % len(elements)
