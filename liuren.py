@@ -62,6 +62,26 @@ def get_lunar_date(gregorian_date):
         month_str = f"闰{month_str}"
     return lunar.year, month_str, day_str, lunar.month, lunar.day
 
+def get_elements(n1, n2, n3):
+    elements = [
+        "大安（震）（木）：平安吉祥，诸事顺遂",
+        "留连（坎）（水）：事情拖延，难以决断",
+        "速喜（离）（火）：喜事临门，好消息快来",
+        "赤口（兑）（金）：口舌是非，易生争执",
+        "小吉（巽）（木）：小有收获，平稳略好",
+        "空亡（震）（木）：虚无缥缈，难有结果",
+        "病符（坤）（土）：不适不顺，多有不便",
+        "桃花（艮）（土）：姻缘桃花，人际和谐",
+        "天德（乾）（金）：吉祥如意，贵人相助"
+    ]
+
+    # 从"大安"开始，获取对应的元素
+    first_index = (n1 - 1) % len(elements)
+    second_index = (n1 + n2 - 2) % len(elements)
+    third_index = (n1 + n2 + n3 - 3) % len(elements)
+
+    return elements[first_index], elements[second_index], elements[third_index]
+
 def main():
     # 获取成都时间
     chengdu_time = get_chengdu_time()
@@ -88,26 +108,6 @@ def main():
     print("结果：")
     for element in result:
         print(element)
-
-def get_elements(n1, n2, n3):
-    elements = [
-        "大安（震）（木）：平安吉祥，诸事顺遂",
-        "留连（坎）（水）：事情拖延，难以决断",
-        "速喜（离）（火）：喜事临门，好消息快来",
-        "赤口（兑）（金）：口舌是非，易生争执",
-        "小吉（巽）（木）：小有收获，平稳略好",
-        "空亡（震）（木）：虚无缥缈，难有结果",
-        "病符（坤）（土）：不适不顺，多有不便",
-        "桃花（艮）（土）：姻缘桃花，人际和谐",
-        "天德（乾）（金）：吉祥如意，贵人相助"
-    ]
-
-    # 从"大安"开始，获取对应的元素
-    first_index = (n1 - 1) % len(elements)
-    second_index = (n1 + n2 - 2) % len(elements)
-    third_index = (n1 + n2 + n3 - 3) % len(elements)
-
-    return elements[first_index], elements[second_index], elements[third_index]
 
 def little_liuren():
     while True:
