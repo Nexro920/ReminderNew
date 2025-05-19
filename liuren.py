@@ -100,10 +100,6 @@ def main():
     chen_name, chen_number = time_to_12chen(solar_time)
     print(f"对应十二时辰: {chen_name} (数字: {chen_number})")
 
-    # n1 = int(input("请输入第一个数字："))
-    # n2 = int(input("请输入第二个数字："))
-    # n3 = int(input("请输入第三个数字："))
-
     result = get_elements(lunar_month_num, lunar_day_num, chen_number)
     print("结果：")
     for element in result:
@@ -130,3 +126,4 @@ def little_liuren():
 
 if __name__ == "__main__":
     main()
+    little_liuren()
