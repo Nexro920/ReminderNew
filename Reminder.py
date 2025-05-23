@@ -373,6 +373,9 @@ class ReminderApp:
         """Handle notification window closure and restart countdown."""
         self.is_running = True
         self.remaining_time = int(self.interval_var.get()) * 60
+        if not self.validate_inputs():
+            self.stop_reminder()
+            return
         self.schedule_update()
 
     def minimize_to_tray(self):
