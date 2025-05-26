@@ -177,36 +177,53 @@ class ReminderApp:
         self.window_hidden = False
         self.after_id = None
         self.tray_icon = None
-        self.language = self.load_language()
+        self.language = self.load_setting("language", self.CONFIG["default_language"])
+        self.interval = self.load_setting("interval", self.CONFIG["interval"])
+        self.start_time = self.load_setting("start_time", self.CONFIG["start_time"])
+        self.end_time = self.load_setting("end_time", self.CONFIG["end_time"])
         self.root = tk.Tk()
+        # Create StringVar objects after root window
+        self.interval_var = tk.StringVar(value=self.interval)
+        self.start_time_var = tk.StringVar(value=self.start_time)
+        self.end_time_var = tk.StringVar(value=self.end_time)
         self._initialize_ui()
         self.update_auto_start_button()
 
-    def load_language(self) -> str:
-        """Load language from config file or return default."""
+    def load_setting(self, setting: str, default: str) -> str:
+        """Load a specific setting from config file or return default."""
         try:
             with open(self.CONFIG["config_file"], "r") as f:
                 settings = json.load(f)
-            language = settings.get("language", self.CONFIG["default_language"])
-            if language not in self.TRANSLATIONS:
-                print(f"Invalid language {language}, resetting to default")
-                language = self.CONFIG["default_language"]
-                self.save_language(language)
-            return language
+            value = settings.get(setting)
+            if value is None:
+                value = default
+                self.save_settings({
+                    "language": settings.get("language", self.CONFIG["default_language"]),
+                    "interval": settings.get("interval", self.CONFIG["interval"]),
+                    "start_time": settings.get("start_time", self.CONFIG["start_time"]),
+                    "end_time": settings.get("end_time", self.CONFIG["end_time"])
+                })
+            return value
         except (FileNotFoundError, json.JSONDecodeError):
-            return self.CONFIG["default_language"]
+            self.save_settings({
+                "language": self.CONFIG["default_language"],
+                "interval": self.CONFIG["interval"],
+                "start_time": self.CONFIG["start_time"],
+                "end_time": self.CONFIG["end_time"]
+            })
+            return default
 
-    def save_language(self, language: str):
-        """Save language to config file."""
+    def save_settings(self, settings: dict):
+        """Save all settings to config file."""
         try:
             with open(self.CONFIG["config_file"], "w") as f:
-                json.dump({"language": language}, f)
+                json.dump(settings, f)
         except Exception as e:
-            print(f"Error saving language: {e}")
+            print(f"Error saving settings: {e}")
 
     def get_text(self, key: str) -> str:
         """Get translated text for the current language."""
-        return self.TRANSLATIONS[self.language].get(key, self.TRANSLATIONS["English"][key])
+        return self.TRANSLATIONS.get(self.language, self.TRANSLATIONS["English"]).get(key, key)
 
     def _initialize_ui(self):
         """Set up the main window and widgets."""
@@ -236,21 +253,21 @@ class ReminderApp:
         # Interval input
         self.interval_label = ttk.Label(frame, text=self.get_text("interval_label"))
         self.interval_label.pack(pady=self.CONFIG["spacing"])
-        self.interval_var = tk.StringVar(value=self.CONFIG["interval"])
+        self.interval_var = tk.StringVar(value=self.interval_var.get())
         self.interval_entry = ttk.Entry(frame, textvariable=self.interval_var, width=self.CONFIG["entry_width"])
         self.interval_entry.pack()
 
         # Start time input
         self.start_time_label = ttk.Label(frame, text=self.get_text("start_time_label"))
         self.start_time_label.pack(pady=self.CONFIG["spacing"])
-        self.start_time_var = tk.StringVar(value=self.CONFIG["start_time"])
+        self.start_time_var = tk.StringVar(value=self.start_time_var.get())
         self.start_time_entry = ttk.Entry(frame, textvariable=self.start_time_var, width=self.CONFIG["entry_width"])
         self.start_time_entry.pack()
 
         # End time input
         self.end_time_label = ttk.Label(frame, text=self.get_text("end_time_label"))
         self.end_time_label.pack(pady=self.CONFIG["spacing"])
-        self.end_time_var = tk.StringVar(value=self.CONFIG["end_time"])
+        self.end_time_var = tk.StringVar(value=self.end_time_var.get())
         self.end_time_entry = ttk.Entry(frame, textvariable=self.end_time_var, width=self.CONFIG["entry_width"])
         self.end_time_entry.pack()
 
@@ -280,17 +297,49 @@ class ReminderApp:
         frame = ttk.Frame(settings_window, padding=self.CONFIG["padding"])
         frame.pack(fill=tk.BOTH, expand=True)
 
+        # Interval input
+        ttk.Label(frame, text=self.get_text("interval_label")).pack(pady=self.CONFIG["spacing"])
+        interval_var = tk.StringVar(value=self.interval_var.get())
+        interval_entry = ttk.Entry(frame, textvariable=interval_var, width=self.CONFIG["entry_width"])
+        interval_entry.pack(pady=self.CONFIG["spacing"])
+
+        # Start time input
+        ttk.Label(frame, text=self.get_text("start_time_label")).pack(pady=self.CONFIG["spacing"])
+        start_time_var = tk.StringVar(value=self.start_time_var.get())
+        start_time_entry = ttk.Entry(frame, textvariable=start_time_var, width=self.CONFIG["entry_width"])
+        start_time_entry.pack(pady=self.CONFIG["spacing"])
+
+        # End time input
+        ttk.Label(frame, text=self.get_text("end_time_label")).pack(pady=self.CONFIG["spacing"])
+        end_time_var = tk.StringVar(value=self.end_time_var.get())
+        end_time_entry = ttk.Entry(frame, textvariable=end_time_var, width=self.CONFIG["entry_width"])
+        end_time_entry.pack(pady=self.CONFIG["spacing"])
+
+        # Language input
         ttk.Label(frame, text=self.get_text("language_label")).pack(pady=self.CONFIG["spacing"])
         language_var = tk.StringVar(value=self.language)
         language_menu = ttk.OptionMenu(frame, language_var, self.language, *self.TRANSLATIONS.keys())
         language_menu.pack(pady=self.CONFIG["spacing"])
 
         def save_and_close():
-            new_language = language_var.get()
-            if new_language != self.language:
-                self.language = new_language
-                self.save_language(new_language)
-                self.update_ui_text()
+            if not self.validate_settings(interval_var, start_time_var, end_time_var):
+                self.show_notification("invalid_input", self.get_text("invalid_input"))
+                return
+            # Update variables
+            self.interval_var.set(interval_var.get())
+            self.start_time_var.set(start_time_var.get())
+            self.end_time_var.set(end_time_var.get())
+            self.language = language_var.get()
+
+            # Save all settings
+            self.save_settings({
+                "language": self.language,
+                "interval": self.interval_var.get(),
+                "start_time": self.start_time_var.get(),
+                "end_time": self.end_time_var.get()
+            })
+
+            self.update_ui_text()
             settings_window.destroy()
 
         ttk.Button(frame, text=self.get_text("save_button"), command=save_and_close).pack(pady=self.CONFIG["spacing"])
@@ -420,40 +469,81 @@ class ReminderApp:
 
         sys.exit(0)
 
-    def validate_inputs(self) -> bool:
-        """Validate user inputs for interval and time range."""
+    def validate_inputs(self, interval_var=None, start_time_var=None, end_time_var=None, show_notification=True) -> bool:
+        """
+        Validate user inputs for interval and time range.
+
+        Args:
+            interval_var: StringVar for interval (defaults to self.interval_var).
+            start_time_var: StringVar for start time (defaults to self.start_time_var).
+            end_time_var: StringVar for end time (defaults to self.end_time_var).
+            show_notification: Whether to show notification for errors (default: True).
+
+        Returns:
+            bool: True if inputs are valid, False otherwise.
+        """
+        # Use provided variables or default to instance variables
+        interval_var = interval_var or self.interval_var
+        start_time_var = start_time_var or self.start_time_var
+        end_time_var = end_time_var or self.end_time_var
+
         try:
             # Validate interval
-            interval_str = self.interval_var.get()
-            if not interval_str.strip():
-                raise ValueError("interval_empty")
+            interval_str = interval_var.get().strip()
+            if not interval_str:
+                raise ValueError("interval_empty", "Interval cannot be empty")
             try:
                 interval = int(interval_str)
             except ValueError:
-                raise ValueError("interval_invalid")
+                raise ValueError("interval_invalid", "Interval must be a valid number")
             if interval <= 0:
-                raise ValueError("interval_error")
+                raise ValueError("interval_error", "Interval must be a positive number")
 
             # Validate time format and range
-            start_str = self.start_time_var.get()
-            end_str = self.end_time_var.get()
+            start_str = start_time_var.get().strip()
+            end_str = end_time_var.get().strip()
             try:
                 start = datetime.datetime.strptime(start_str, "%H:%M")
                 end = datetime.datetime.strptime(end_str, "%H:%M")
+                # Validate hour and minute ranges
+                if not (0 <= start.hour <= 23 and 0 <= start.minute <= 59):
+                    raise ValueError("time_invalid", "Start time has invalid hours or minutes")
+                if not (0 <= end.hour <= 23 and 0 <= end.minute <= 59):
+                    raise ValueError("time_invalid", "End time has invalid hours or minutes")
             except ValueError:
-                raise ValueError("time_invalid")
+                raise ValueError("time_invalid", "Times must be in HH:MM format")
             if end <= start:
-                raise ValueError("time_error")
+                raise ValueError("time_error", "End time must be after start time")
 
             # Check if current time is within range
-            now = datetime.datetime.now().strftime("%H:%M")
-            if not (start_str <= now < end_str):
-                raise ValueError("outside_range")
+            now = datetime.datetime.now()
+            start_time = datetime.datetime.combine(now.date(), start.time())
+            end_time = datetime.datetime.combine(now.date(), end.time())
+            if not (start_time <= now < end_time):
+                raise ValueError("outside_range", "Current time is outside the reminder range")
 
             return True
         except ValueError as e:
-            self.show_notification("invalid_input", str(e))
+            if show_notification:
+                error_key = e.args[0] if e.args else "invalid_input"
+                self.show_notification("invalid_input", error_key)
+            # if show_notification and len(e.args) > 1:
+            #     self.show_notification("invalid_input", e.args[1])
             return False
+
+    def validate_settings(self, interval_var, start_time_var, end_time_var):
+        """
+        Validate settings inputs from the settings window without showing notifications.
+
+        Args:
+            interval_var: StringVar for interval.
+            start_time_var: StringVar for start time.
+            end_time_var: StringVar for end time.
+
+        Returns:
+            bool: True if inputs are valid, False otherwise.
+        """
+        return self.validate_inputs(interval_var, start_time_var, end_time_var, show_notification=False)
 
     def toggle_reminder(self):
         """Toggle the reminder on or off."""
@@ -466,6 +556,7 @@ class ReminderApp:
         """Start the reminder system."""
         if not self.validate_inputs():
             return
+
         self.is_running = True
         self.start_button.config(text=self.get_text("stop_button"))
         self.set_input_state("disabled")
