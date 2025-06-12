@@ -22,6 +22,12 @@ class RegistryManager:
         """Get the path of the executable or script."""
         return sys.executable if getattr(sys, 'frozen', False) else os.path.realpath(__file__)
 
+    @staticmethod
+    def get_exe_dir() -> str:
+        """Get the directory of the executable or script."""
+        exe_path = RegistryManager.get_exe_path()
+        return os.path.dirname(exe_path)
+
     @classmethod
     def set_auto_start(cls, enabled: bool) -> bool:
         """Set or remove the application from Windows startup."""
@@ -108,7 +114,7 @@ class ReminderApp:
         "entry_width": 10,
         "padding": 10,
         "spacing": 5,
-        "config_file": "settings.json",
+        "config_file": os.path.join(RegistryManager.get_exe_dir(), "settings.json"),#"settings.json",
         "default_language": "English"
     }
 
